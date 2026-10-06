@@ -1,0 +1,21 @@
+# Runs the same checks we run locally via make targets.
+# Every step mirrors a command already verified on a dev machine,
+# so CI should never surprise us with a failure we cannot reproduce.
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go build ./...
+      - run: go vet ./...
+      - run: test -z "$(gofmt -l .)"
+      - run: go test -race -count=1 ./...
