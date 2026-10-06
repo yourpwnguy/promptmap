@@ -17,3 +17,6 @@ tidy:
 
 lint:
 	golangci-lint run ./... || true
+
+run-demo:
+	go run ./tools/demoserver --mode vulnerable
