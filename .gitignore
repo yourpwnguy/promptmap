@@ -1,0 +1,5 @@
+/promptmap
+promptmap-report*.json
+promptmap.yaml
+/bin/
+.opencode/
