@@ -2,4 +2,5 @@
 promptmap-report*.json
 promptmap.yaml
 /bin/
+idea.md
 .opencode/
