@@ -23,12 +23,17 @@ var (
 	v       = viper.New()
 )
 
+// Version is set at release time via ldflags (-X main.Version=...).
+// Local builds report dev, which is honest about what they are.
+var Version = "dev"
+
 // Execute builds the tree and runs it. Returns a process exit code.
 func Execute() (int, error) {
 	root := &cobra.Command{
-		Use:   "promptmap",
-		Short: "Prompt injection scanner for LLM apps",
-		Long:  "Probe an LLM chat endpoint with known injection payloads and report which ones look successful.",
+		Use:     "promptmap",
+		Short:   "Prompt injection scanner for LLM apps",
+		Long:    "Probe an LLM chat endpoint with known injection payloads and report which ones look successful.",
+		Version: Version,
 		PersistentPreRun: func(cmd *cobra.Command, args []string) {
 			setupLogging()
 		},

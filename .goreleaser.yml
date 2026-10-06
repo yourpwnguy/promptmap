@@ -1,0 +1,33 @@
+# goreleaser builds release binaries for promptmap.
+# Run with: goreleaser release --clean
+# Version lands in the binary via ldflags (see builds below),
+# so `promptmap --version` reports the release tag.
+version: 2
+
+project_name: promptmap
+
+builds:
+  - main: ./cmd/promptmap
+    binary: promptmap
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X main.Version={{.Version}}
+
+archives:
+  - name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
