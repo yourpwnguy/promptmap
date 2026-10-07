@@ -31,11 +31,20 @@ func newListCmd() *cobra.Command {
 }
 
 func newVerifyCmd() *cobra.Command {
-	var payloadID string
+	var (
+		payloadID string
+		repeat    int
+	)
 	cmd := &cobra.Command{
 		Use:   "verify",
 		Short: "Resend one payload and show the raw response",
+		Long: "Resend one payload N times. LLMs are non deterministic, so a\n" +
+			"single hit can be luck. If verdicts differ across repeats, the\n" +
+			"result is flaky and needs a human, not a victory lap.",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if repeat < 1 {
+				return fmt.Errorf("--repeat must be >= 1, got %d", repeat)
+			}
 			// Same as scan: cfgFile global already has the --config value.
 			cfg, err := config.Load(v, cfgFile)
 			if err != nil {
@@ -66,16 +75,24 @@ func newVerifyCmd() *cobra.Command {
 			})
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
-			text, status, err := sender.Send(ctx, found.Prompt)
-			if err != nil {
-				return err
+			seen := map[detect.Verdict]int{}
+			for i := 1; i <= repeat; i++ {
+				text, status, err := sender.Send(ctx, found.Prompt)
+				if err != nil {
+					return err
+				}
+				out := detect.NewHeuristic().Classify(found.Canary, text)
+				seen[out.Verdict]++
+				fmt.Printf("--- attempt %d/%d: status %d, verdict %s (%s)\n%s\n", i, repeat, status, out.Verdict, out.Reason, text)
 			}
-			out := detect.NewHeuristic().Classify(found.Canary, text)
-			fmt.Printf("status: %d\nverdict: %s (%s)\nresponse:\n%s\n", status, out.Verdict, out.Reason, text)
+			if len(seen) > 1 {
+				fmt.Printf("flaky: verdicts differed across %d runs %v, treat as unclear\n", repeat, seen)
+			}
 			return nil
 		},
 	}
 	cmd.Flags().StringVar(&payloadID, "payload-id", "", "payload to resend")
+	cmd.Flags().IntVar(&repeat, "repeat", 1, "how many times to resend")
 	_ = cmd.MarkFlagRequired("payload-id")
 	return cmd
 }
