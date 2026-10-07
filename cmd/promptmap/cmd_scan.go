@@ -36,6 +36,7 @@ func newScanCmd() *cobra.Command {
 		quickResp   string
 		headers     []string
 		categories  []string
+		saveAll     bool
 	)
 	cmd := &cobra.Command{
 		Use:   "scan",
@@ -88,7 +89,7 @@ func newScanCmd() *cobra.Command {
 			for k, val := range extra {
 				cfg.Target.Headers[k] = val
 			}
-			return runScan(cfg, output, customDir)
+			return runScan(cfg, scanOpts{output: output, customDir: customDir, saveAll: saveAll})
 		},
 	}
 	cmd.Flags().StringVar(&mode, "mode", "direct", "direct or indirect")
@@ -104,7 +105,16 @@ func newScanCmd() *cobra.Command {
 	cmd.Flags().StringVar(&quickResp, "response-path", "$.reply", "gjson path to model text for quick mode")
 	cmd.Flags().StringArrayVar(&headers, "header", nil, `"Key: Value" header to send (repeatable)`)
 	cmd.Flags().StringSliceVar(&categories, "categories", nil, "only run these payload categories (comma separated or repeatable)")
+	cmd.Flags().BoolVar(&saveAll, "save-all", false, "save prompts and responses for blocked probes too (big files)")
 	return cmd
+}
+
+// scanOpts groups the run time knobs so runScan does not grow a new
+// parameter every time we add a flag. Plain struct, no magic.
+type scanOpts struct {
+	output    string
+	customDir string
+	saveAll   bool
 }
 
 // parseHeaders turns repeatable --header "Key: Value" flags into a map.
@@ -166,7 +176,7 @@ func selectPayloads(all []payloads.Payload, mode string, categories []string) []
 	return base
 }
 
-func runScan(cfg config.Config, output, customDir string) error {
+func runScan(cfg config.Config, o scanOpts) error {
 	started := time.Now()
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
@@ -175,7 +185,7 @@ func runScan(cfg config.Config, output, customDir string) error {
 	if err != nil {
 		return err
 	}
-	extra, err := payloads.LoadDir(customDir)
+	extra, err := payloads.LoadDir(o.customDir)
 	if err != nil {
 		return err
 	}
@@ -216,12 +226,12 @@ func runScan(cfg config.Config, output, customDir string) error {
 
 	interrupted := ctx.Err() != nil
 	sum := sha256.Sum256([]byte(cfg.Target.URL))
-	rep := report.Build(results, fmt.Sprintf("sha256:%x", sum[:8]), "v0.1.0", started, interrupted)
-	if err := report.WriteJSON(output, rep); err != nil {
+	rep := report.Build(results, fmt.Sprintf("sha256:%x", sum[:8]), "v0.1.0", started, interrupted, o.saveAll)
+	if err := report.WriteJSON(o.output, rep); err != nil {
 		return err
 	}
 	report.PrintSummary(rep)
-	fmt.Println("wrote", output)
+	fmt.Println("wrote", o.output)
 
 	if rep.Summary.LikelyVuln > 0 || rep.Summary.Unclear > 0 {
 		code := 2

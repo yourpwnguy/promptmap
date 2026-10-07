@@ -17,7 +17,7 @@ func TestBuildCountsAndWrite(t *testing.T) {
 		{Probe: payloads.Probe{PayloadID: "b", Prompt: "evil"}, Verdict: detect.LikelyVuln, Response: "PWNED"},
 		{Probe: payloads.Probe{PayloadID: "c", Prompt: "hmm"}, Verdict: detect.Unclear, Response: "weird"},
 	}
-	rep := report.Build(results, "sha256:abc", "v0.1.0", time.Now(), false)
+	rep := report.Build(results, "sha256:abc", "v0.1.0", time.Now(), false, false)
 	if rep.Summary.Total != 3 || rep.Summary.Blocked != 1 || rep.Summary.LikelyVuln != 1 || rep.Summary.Unclear != 1 {
 		t.Fatalf("bad summary %+v", rep.Summary)
 	}
@@ -30,5 +30,15 @@ func TestBuildCountsAndWrite(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "r.json")
 	if err := report.WriteJSON(path, rep); err != nil {
 		t.Fatalf("write: %v", err)
+	}
+}
+
+func TestBuildSaveAll(t *testing.T) {
+	results := []runner.Result{
+		{Probe: payloads.Probe{PayloadID: "a", Prompt: "boring"}, Verdict: detect.Blocked},
+	}
+	rep := report.Build(results, "sha256:abc", "v0.1.0", time.Now(), false, true)
+	if len(rep.Findings) != 1 || rep.Findings[0].SentPrompt != "boring" {
+		t.Fatalf("saveAll should keep blocked prompts: %+v", rep.Findings)
 	}
 }

@@ -60,7 +60,10 @@ type Finding struct {
 
 // Build assembles a Report from results. targetHash should already be
 // a sha256 of the URL, not the raw URL, so secrets never land in files.
-func Build(results []runner.Result, targetHash, corpusVersion string, started time.Time, interrupted bool) Report {
+// saveAll keeps prompts and excerpts for blocked probes too, at the
+// cost of a much bigger file. Default off: blocked noise is rarely
+// worth the disk.
+func Build(results []runner.Result, targetHash, corpusVersion string, started time.Time, interrupted, saveAll bool) Report {
 	r := Report{
 		SchemaVersion: SchemaVersion,
 		CorpusVersion: corpusVersion,
@@ -91,8 +94,9 @@ func Build(results []runner.Result, targetHash, corpusVersion string, started ti
 			LatencyMs: res.LatencyMs,
 		}
 		// Save prompts and excerpts only for interesting results.
-		// Blocked probes would just bloat the file with noise.
-		if res.Verdict != detect.Blocked {
+		// Blocked probes would just bloat the file with noise, unless
+		// the user asked for everything with saveAll.
+		if res.Verdict != detect.Blocked || saveAll {
 			f.SentPrompt = res.Probe.Prompt
 			if res.Err != "" {
 				f.Response = res.Err
