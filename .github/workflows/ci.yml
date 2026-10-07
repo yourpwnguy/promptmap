@@ -19,3 +19,31 @@ jobs:
       - run: go vet ./...
       - run: test -z "$(gofmt -l .)"
       - run: go test -race -count=1 ./...
+
+  # End to end proof: scan the demo server in both modes and assert
+  # the exit codes (2 means hits found, 0 means clean). These are the
+  # exact steps from the README quickstart, so CI guards the docs too.
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go build -o promptmap ./cmd/promptmap
+      - run: go build -o demoserver ./tools/demoserver
+      - run: ./promptmap init --output smoke.yaml
+      - name: scan vulnerable demo (expect hits)
+        run: |
+          ./demoserver --mode vulnerable &
+          echo $! > demo.pid
+          sleep 2
+          ./promptmap scan --config smoke.yaml --i-have-permission --max-probes 12 -o smoke-vuln.json; test $? -eq 2
+          kill $(cat demo.pid)
+      - name: scan safe demo (expect clean)
+        run: |
+          ./demoserver --mode safe &
+          echo $! > demo.pid
+          sleep 2
+          ./promptmap scan --config smoke.yaml --i-have-permission --max-probes 12 -o smoke-safe.json; test $? -eq 0
+          kill $(cat demo.pid)
