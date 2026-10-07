@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -33,6 +34,7 @@ func newScanCmd() *cobra.Command {
 		quickMethod string
 		quickBody   string
 		quickResp   string
+		headers     []string
 	)
 	cmd := &cobra.Command{
 		Use:   "scan",
@@ -72,6 +74,16 @@ func newScanCmd() *cobra.Command {
 			if cmd.Flags().Changed("rate") {
 				cfg.Scan.RatePerSec = ratePerSec
 			}
+			extra, err := parseHeaders(headers)
+			if err != nil {
+				return err
+			}
+			if cfg.Target.Headers == nil {
+				cfg.Target.Headers = map[string]string{}
+			}
+			for k, val := range extra {
+				cfg.Target.Headers[k] = val
+			}
 			return runScan(cfg, output, customDir)
 		},
 	}
@@ -86,7 +98,24 @@ func newScanCmd() *cobra.Command {
 	cmd.Flags().StringVar(&quickMethod, "method", "POST", "HTTP method for quick mode")
 	cmd.Flags().StringVar(&quickBody, "body", `{"message": "{{PROMPT}}"}`, "body template for quick mode")
 	cmd.Flags().StringVar(&quickResp, "response-path", "$.reply", "gjson path to model text for quick mode")
+	cmd.Flags().StringArrayVar(&headers, "header", nil, `"Key: Value" header to send (repeatable)`)
 	return cmd
+}
+
+// parseHeaders turns repeatable --header "Key: Value" flags into a map.
+// Flags win over config file entries on exact key match. Values may
+// contain colons (we split on the first one only).
+func parseHeaders(flags []string) (map[string]string, error) {
+	out := map[string]string{}
+	for _, h := range flags {
+		k, val, ok := strings.Cut(h, ":")
+		k, val = strings.TrimSpace(k), strings.TrimSpace(val)
+		if !ok || k == "" || val == "" {
+			return nil, fmt.Errorf("bad --header %q (want \"Key: Value\")", h)
+		}
+		out[k] = val
+	}
+	return out, nil
 }
 
 // quickConfig builds a Config from --url flags so trivial targets do
