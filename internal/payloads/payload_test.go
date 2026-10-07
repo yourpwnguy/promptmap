@@ -11,8 +11,8 @@ func TestLoadEmbedded(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	if len(all) < 12 {
-		t.Fatalf("expected at least 12 seed payloads, got %d", len(all))
+	if len(all) < 20 {
+		t.Fatalf("expected at least 20 seed payloads, got %d", len(all))
 	}
 }
 
