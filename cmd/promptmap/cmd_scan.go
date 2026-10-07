@@ -29,21 +29,36 @@ func newScanCmd() *cobra.Command {
 		maxProbes   int
 		concurrency int
 		ratePerSec  float64
+		quickURL    string
+		quickMethod string
+		quickBody   string
+		quickResp   string
 	)
 	cmd := &cobra.Command{
 		Use:   "scan",
 		Short: "Run payloads against a target",
+		Long: "Scan from a config file (--config) or ad hoc with --url.\n" +
+			"Quick mode example: promptmap scan --url http://localhost:8080/api/chat --i-have-permission",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !permission {
 				return fmt.Errorf("refusing without --i-have-permission (only scan apps you own or are allowed to test)")
 			}
-			// cfgFile is bound to the root persistent --config flag, so it
-			// already holds the user's value no matter where they placed it
-			// on the command line. No Changed check needed.
-			cfg, err := config.Load(v, cfgFile)
-			if err != nil {
-				// Allow pure flag mode when no config file exists: require --url.
-				return fmt.Errorf("load config: %w (run `promptmap init` first or pass --config)", err)
+			var cfg config.Config
+			if cfgFile == "" {
+				// No config file: build one from flags. Quick mode trusts
+				// the explicit --url (including localhost), the permission
+				// flag above is the real consent gate.
+				var err error
+				cfg, err = quickConfig(quickURL, quickMethod, quickBody, quickResp)
+				if err != nil {
+					return err
+				}
+			} else {
+				var err error
+				cfg, err = config.Load(v, cfgFile)
+				if err != nil {
+					return fmt.Errorf("load config: %w (run `promptmap init` first or use --url)", err)
+				}
 			}
 			if cmd.Flags().Changed("mode") {
 				cfg.Scan.Mode = mode
@@ -67,7 +82,30 @@ func newScanCmd() *cobra.Command {
 	cmd.Flags().IntVar(&maxProbes, "max-probes", 200, "cap total probes")
 	cmd.Flags().IntVar(&concurrency, "concurrency", 5, "parallel requests")
 	cmd.Flags().Float64Var(&ratePerSec, "rate", 5, "requests per second")
+	cmd.Flags().StringVar(&quickURL, "url", "", "target chat URL (quick mode, no config file needed)")
+	cmd.Flags().StringVar(&quickMethod, "method", "POST", "HTTP method for quick mode")
+	cmd.Flags().StringVar(&quickBody, "body", `{"message": "{{PROMPT}}"}`, "body template for quick mode")
+	cmd.Flags().StringVar(&quickResp, "response-path", "$.reply", "gjson path to model text for quick mode")
 	return cmd
+}
+
+// quickConfig builds a Config from --url flags so trivial targets do
+// not need a YAML file. Anything exotic (custom auth, GraphQL) still
+// wants a real config file.
+func quickConfig(rawURL, method, body, respPath string) (config.Config, error) {
+	if rawURL == "" {
+		return config.Config{}, fmt.Errorf("need --url or --config (run `promptmap init` for a file example)")
+	}
+	cfg := config.Defaults()
+	cfg.Target.URL = rawURL
+	cfg.Target.Method = method
+	cfg.Target.BodyTemplate = body
+	cfg.Target.ResponsePath = respPath
+	cfg.Scan.AllowPrivate = true
+	if err := config.Validate(cfg); err != nil {
+		return config.Config{}, err
+	}
+	return cfg, nil
 }
 
 func runScan(cfg config.Config, output, customDir string) error {
