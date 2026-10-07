@@ -37,6 +37,7 @@ func newScanCmd() *cobra.Command {
 		headers     []string
 		categories  []string
 		saveAll     bool
+		format      string
 	)
 	cmd := &cobra.Command{
 		Use:   "scan",
@@ -46,6 +47,11 @@ func newScanCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !permission {
 				return fmt.Errorf("refusing without --i-have-permission (only scan apps you own or are allowed to test)")
+			}
+			switch format {
+			case "json", "html", "both":
+			default:
+				return fmt.Errorf("bad --format %q (want json, html or both)", format)
 			}
 			var cfg config.Config
 			if cfgFile == "" {
@@ -89,7 +95,7 @@ func newScanCmd() *cobra.Command {
 			for k, val := range extra {
 				cfg.Target.Headers[k] = val
 			}
-			return runScan(cfg, scanOpts{output: output, customDir: customDir, saveAll: saveAll})
+			return runScan(cfg, scanOpts{output: output, customDir: customDir, saveAll: saveAll, format: format})
 		},
 	}
 	cmd.Flags().StringVar(&mode, "mode", "direct", "direct or indirect")
@@ -106,6 +112,7 @@ func newScanCmd() *cobra.Command {
 	cmd.Flags().StringArrayVar(&headers, "header", nil, `"Key: Value" header to send (repeatable)`)
 	cmd.Flags().StringSliceVar(&categories, "categories", nil, "only run these payload categories (comma separated or repeatable)")
 	cmd.Flags().BoolVar(&saveAll, "save-all", false, "save prompts and responses for blocked probes too (big files)")
+	cmd.Flags().StringVar(&format, "format", "json", "report format: json, html or both")
 	return cmd
 }
 
@@ -115,6 +122,7 @@ type scanOpts struct {
 	output    string
 	customDir string
 	saveAll   bool
+	format    string
 }
 
 // parseHeaders turns repeatable --header "Key: Value" flags into a map.
@@ -227,11 +235,30 @@ func runScan(cfg config.Config, o scanOpts) error {
 	interrupted := ctx.Err() != nil
 	sum := sha256.Sum256([]byte(cfg.Target.URL))
 	rep := report.Build(results, fmt.Sprintf("sha256:%x", sum[:8]), "v0.1.0", started, interrupted, o.saveAll)
-	if err := report.WriteJSON(o.output, rep); err != nil {
-		return err
+	switch o.format {
+	case "json":
+		if err := report.WriteJSON(o.output, rep); err != nil {
+			return err
+		}
+		fmt.Println("wrote", o.output)
+	case "html":
+		if err := report.WriteHTML(o.output, rep); err != nil {
+			return err
+		}
+		fmt.Println("wrote", o.output)
+	case "both":
+		if err := report.WriteJSON(o.output, rep); err != nil {
+			return err
+		}
+		htmlPath := report.HTMLPath(o.output)
+		if err := report.WriteHTML(htmlPath, rep); err != nil {
+			return err
+		}
+		fmt.Println("wrote", o.output, "and", htmlPath)
+	default:
+		return fmt.Errorf("unreachable: bad format %q slipped past flag validation", o.format)
 	}
 	report.PrintSummary(rep)
-	fmt.Println("wrote", o.output)
 
 	if rep.Summary.LikelyVuln > 0 || rep.Summary.Unclear > 0 {
 		code := 2
