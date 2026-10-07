@@ -35,6 +35,7 @@ func newScanCmd() *cobra.Command {
 		quickBody   string
 		quickResp   string
 		headers     []string
+		categories  []string
 	)
 	cmd := &cobra.Command{
 		Use:   "scan",
@@ -74,6 +75,9 @@ func newScanCmd() *cobra.Command {
 			if cmd.Flags().Changed("rate") {
 				cfg.Scan.RatePerSec = ratePerSec
 			}
+			if cmd.Flags().Changed("categories") {
+				cfg.Scan.Categories = categories
+			}
 			extra, err := parseHeaders(headers)
 			if err != nil {
 				return err
@@ -99,6 +103,7 @@ func newScanCmd() *cobra.Command {
 	cmd.Flags().StringVar(&quickBody, "body", `{"message": "{{PROMPT}}"}`, "body template for quick mode")
 	cmd.Flags().StringVar(&quickResp, "response-path", "$.reply", "gjson path to model text for quick mode")
 	cmd.Flags().StringArrayVar(&headers, "header", nil, `"Key: Value" header to send (repeatable)`)
+	cmd.Flags().StringSliceVar(&categories, "categories", nil, "only run these payload categories (comma separated or repeatable)")
 	return cmd
 }
 
@@ -137,6 +142,30 @@ func quickConfig(rawURL, method, body, respPath string) (config.Config, error) {
 	return cfg, nil
 }
 
+// selectPayloads picks which corpus entries run for this scan.
+//
+// Direct mode runs everything except indirect-basic (those carry their
+// own doc wrapper and belong to indirect mode). Indirect mode runs only
+// indirect-basic unless the user explicitly filtered categories, in
+// which case we honor the filter and let an empty result fail loudly
+// downstream instead of silently scanning the wrong thing.
+func selectPayloads(all []payloads.Payload, mode string, categories []string) []payloads.Payload {
+	if mode == "indirect" {
+		if len(categories) == 0 {
+			return payloads.Filter(all, []string{"indirect-basic"})
+		}
+		return payloads.Filter(all, categories)
+	}
+	var base []payloads.Payload
+	for _, p := range payloads.Filter(all, categories) {
+		if p.Category == "indirect-basic" {
+			continue
+		}
+		base = append(base, p)
+	}
+	return base
+}
+
 func runScan(cfg config.Config, output, customDir string) error {
 	started := time.Now()
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
@@ -152,20 +181,7 @@ func runScan(cfg config.Config, output, customDir string) error {
 	}
 	all = append(all, extra...)
 
-	// Mode selects which slice of the corpus runs. Direct skips
-	// indirect-basic (those need the doc wrapper which they already
-	// carry), indirect runs only those. Simple and explainable.
-	var base []payloads.Payload
-	if cfg.Scan.Mode == "indirect" {
-		base = payloads.Filter(all, []string{"indirect-basic"})
-	} else {
-		for _, p := range payloads.Filter(all, cfg.Scan.Categories) {
-			if p.Category == "indirect-basic" {
-				continue
-			}
-			base = append(base, p)
-		}
-	}
+	base := selectPayloads(all, cfg.Scan.Mode, cfg.Scan.Categories)
 	if len(base) == 0 {
 		return fmt.Errorf("no payloads selected for mode %q (check corpus and filters)", cfg.Scan.Mode)
 	}

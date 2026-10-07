@@ -2,6 +2,8 @@ package main
 
 import (
 	"testing"
+
+	"github.com/promptmap/promptmap/internal/payloads"
 )
 
 func TestQuickConfigOK(t *testing.T) {
@@ -41,5 +43,24 @@ func TestParseHeadersBad(t *testing.T) {
 		if _, err := parseHeaders([]string{h}); err == nil {
 			t.Errorf("expected error for %q", h)
 		}
+	}
+}
+
+func TestSelectPayloads(t *testing.T) {
+	all := []payloads.Payload{
+		{ID: "a", Category: "ignore-instructions"},
+		{ID: "b", Category: "indirect-basic"},
+	}
+	if got := selectPayloads(all, "direct", nil); len(got) != 1 || got[0].ID != "a" {
+		t.Fatalf("direct should skip indirect, got %v", got)
+	}
+	if got := selectPayloads(all, "indirect", nil); len(got) != 1 || got[0].ID != "b" {
+		t.Fatalf("indirect defaults to indirect-basic, got %v", got)
+	}
+	if got := selectPayloads(all, "direct", []string{"ignore-instructions"}); len(got) != 1 {
+		t.Fatalf("category filter broke direct, got %v", got)
+	}
+	if got := selectPayloads(all, "indirect", []string{"nope"}); len(got) != 0 {
+		t.Fatalf("unknown category should select nothing, got %v", got)
 	}
 }
