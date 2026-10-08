@@ -34,20 +34,38 @@ func newVerifyCmd() *cobra.Command {
 	var (
 		payloadID string
 		repeat    int
+		url       string
+		method    string
+		body      string
+		respPath  string
+		headers   []string
 	)
 	cmd := &cobra.Command{
 		Use:   "verify",
 		Short: "Resend one payload and show the raw response",
 		Long: "Resend one payload N times. LLMs are non deterministic, so a\n" +
 			"single hit can be luck. If verdicts differ across repeats, the\n" +
-			"result is flaky and needs a human, not a victory lap.",
+			"result is flaky and needs a human, not a victory lap.\n" +
+			"Uses --config like scan, or ad hoc with --url.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if repeat < 1 {
 				return fmt.Errorf("--repeat must be >= 1, got %d", repeat)
 			}
-			// Same as scan: cfgFile global already has the --config value.
-			cfg, err := config.Load(v, cfgFile)
-			if err != nil {
+			var cfg config.Config
+			if cfgFile == "" {
+				var err error
+				cfg, err = quickConfig(url, method, body, respPath)
+				if err != nil {
+					return err
+				}
+			} else {
+				var err error
+				cfg, err = config.Load(v, cfgFile)
+				if err != nil {
+					return err
+				}
+			}
+			if err := mergeHeaders(&cfg, headers); err != nil {
 				return err
 			}
 			all, err := payloads.LoadEmbedded()
@@ -93,6 +111,11 @@ func newVerifyCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&payloadID, "payload-id", "", "payload to resend")
 	cmd.Flags().IntVar(&repeat, "repeat", 1, "how many times to resend")
+	cmd.Flags().StringVar(&url, "url", "", "target chat URL (quick mode, no config file needed)")
+	cmd.Flags().StringVar(&method, "method", "POST", "HTTP method for quick mode")
+	cmd.Flags().StringVar(&body, "body", `{"message": "{{PROMPT}}"}`, "body template for quick mode")
+	cmd.Flags().StringVar(&respPath, "response-path", "$.reply", "gjson path to model text for quick mode")
+	cmd.Flags().StringArrayVar(&headers, "header", nil, `"Key: Value" header to send (repeatable)`)
 	_ = cmd.MarkFlagRequired("payload-id")
 	return cmd
 }

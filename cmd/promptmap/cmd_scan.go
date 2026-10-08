@@ -86,15 +86,8 @@ func newScanCmd() *cobra.Command {
 			if cmd.Flags().Changed("categories") {
 				cfg.Scan.Categories = categories
 			}
-			extra, err := parseHeaders(headers)
-			if err != nil {
+			if err := mergeHeaders(&cfg, headers); err != nil {
 				return err
-			}
-			if cfg.Target.Headers == nil {
-				cfg.Target.Headers = map[string]string{}
-			}
-			for k, val := range extra {
-				cfg.Target.Headers[k] = val
 			}
 			return runScan(cfg, scanOpts{output: output, customDir: customDir, saveAll: saveAll, format: format, timeout: timeout})
 		},
@@ -142,6 +135,23 @@ func parseHeaders(flags []string) (map[string]string, error) {
 		out[k] = val
 	}
 	return out, nil
+}
+
+// mergeHeaders applies repeatable --header flags onto the config.
+// Flags win over file entries on exact key match. Shared by scan and
+// verify so both commands treat headers the same way.
+func mergeHeaders(cfg *config.Config, flags []string) error {
+	extra, err := parseHeaders(flags)
+	if err != nil {
+		return err
+	}
+	if cfg.Target.Headers == nil {
+		cfg.Target.Headers = map[string]string{}
+	}
+	for k, val := range extra {
+		cfg.Target.Headers[k] = val
+	}
+	return nil
 }
 
 // quickConfig builds a Config from --url flags so trivial targets do

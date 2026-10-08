@@ -53,6 +53,20 @@ func TestParseHeadersBad(t *testing.T) {
 	}
 }
 
+func TestMergeHeaders(t *testing.T) {
+	cfg := config.Defaults()
+	cfg.Target.Headers = map[string]string{"Auth": "old", "Keep": "yes"}
+	if err := mergeHeaders(&cfg, []string{"Auth: new", "Extra: 1"}); err != nil {
+		t.Fatalf("merge: %v", err)
+	}
+	if cfg.Target.Headers["Auth"] != "new" || cfg.Target.Headers["Keep"] != "yes" || cfg.Target.Headers["Extra"] != "1" {
+		t.Fatalf("bad merge: %v", cfg.Target.Headers)
+	}
+	if err := mergeHeaders(&cfg, []string{"broken"}); err == nil {
+		t.Fatal("expected error for bad header")
+	}
+}
+
 func TestSelectPayloads(t *testing.T) {
 	all := []payloads.Payload{
 		{ID: "a", Category: "ignore-instructions"},
