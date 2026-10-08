@@ -36,6 +36,7 @@ func newScanCmd() *cobra.Command {
 		quickResp   string
 		headers     []string
 		categories  []string
+		mutations   []string
 		saveAll     bool
 		format      string
 		timeout     time.Duration
@@ -86,6 +87,9 @@ func newScanCmd() *cobra.Command {
 			if cmd.Flags().Changed("categories") {
 				cfg.Scan.Categories = categories
 			}
+			if cmd.Flags().Changed("mutations") {
+				cfg.Scan.Mutations = mutations
+			}
 			if err := mergeHeaders(&cfg, headers); err != nil {
 				return err
 			}
@@ -105,6 +109,7 @@ func newScanCmd() *cobra.Command {
 	cmd.Flags().StringVar(&quickResp, "response-path", "$.reply", "gjson path to model text for quick mode")
 	cmd.Flags().StringArrayVar(&headers, "header", nil, `"Key: Value" header to send (repeatable)`)
 	cmd.Flags().StringSliceVar(&categories, "categories", nil, "only run these payload categories (comma separated or repeatable)")
+	cmd.Flags().StringSliceVar(&mutations, "mutations", nil, "mutators to apply, e.g. case-swap,pad-whitespace,wrap-benign (empty means none)")
 	cmd.Flags().BoolVar(&saveAll, "save-all", false, "save prompts and responses for blocked probes too (big files)")
 	cmd.Flags().StringVar(&format, "format", "json", "report format: json, html, both or sarif")
 	cmd.Flags().DurationVar(&timeout, "timeout", 0, "overall scan deadline, e.g. 2m (0 means none)")
