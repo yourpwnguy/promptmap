@@ -38,6 +38,7 @@ func newScanCmd() *cobra.Command {
 		categories  []string
 		saveAll     bool
 		format      string
+		timeout     time.Duration
 	)
 	cmd := &cobra.Command{
 		Use:   "scan",
@@ -95,7 +96,7 @@ func newScanCmd() *cobra.Command {
 			for k, val := range extra {
 				cfg.Target.Headers[k] = val
 			}
-			return runScan(cfg, scanOpts{output: output, customDir: customDir, saveAll: saveAll, format: format})
+			return runScan(cfg, scanOpts{output: output, customDir: customDir, saveAll: saveAll, format: format, timeout: timeout})
 		},
 	}
 	cmd.Flags().StringVar(&mode, "mode", "direct", "direct or indirect")
@@ -113,6 +114,7 @@ func newScanCmd() *cobra.Command {
 	cmd.Flags().StringSliceVar(&categories, "categories", nil, "only run these payload categories (comma separated or repeatable)")
 	cmd.Flags().BoolVar(&saveAll, "save-all", false, "save prompts and responses for blocked probes too (big files)")
 	cmd.Flags().StringVar(&format, "format", "json", "report format: json, html or both")
+	cmd.Flags().DurationVar(&timeout, "timeout", 0, "overall scan deadline, e.g. 2m (0 means none)")
 	return cmd
 }
 
@@ -123,6 +125,7 @@ type scanOpts struct {
 	customDir string
 	saveAll   bool
 	format    string
+	timeout   time.Duration
 }
 
 // parseHeaders turns repeatable --header "Key: Value" flags into a map.
@@ -188,6 +191,14 @@ func runScan(cfg config.Config, o scanOpts) error {
 	started := time.Now()
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
+	// An overall deadline turns a hung target into a partial report
+	// instead of a hung CLI. Expiry marks the report interrupted, same
+	// as Ctrl-C, so downstream tooling treats it as incomplete.
+	if o.timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, o.timeout)
+		defer cancel()
+	}
 
 	all, err := payloads.LoadEmbedded()
 	if err != nil {

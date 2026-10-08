@@ -1,8 +1,15 @@
 package main
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
 
+	"github.com/promptmap/promptmap/internal/config"
 	"github.com/promptmap/promptmap/internal/payloads"
 )
 
@@ -62,5 +69,50 @@ func TestSelectPayloads(t *testing.T) {
 	}
 	if got := selectPayloads(all, "indirect", []string{"nope"}); len(got) != 0 {
 		t.Fatalf("unknown category should select nothing, got %v", got)
+	}
+}
+
+// TestRunScanTimeout proves an overall deadline produces a partial
+// report instead of hanging: slow server, tiny timeout, interrupted
+// must come back true.
+func TestRunScanTimeout(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-r.Context().Done():
+		case <-time.After(500 * time.Millisecond):
+			_, _ = w.Write([]byte(`{"reply": "slow"}`))
+		}
+	}))
+	defer srv.Close()
+
+	cfg := config.Defaults()
+	cfg.Target.URL = srv.URL
+	cfg.Target.BodyTemplate = `{"message": "{{PROMPT}}"}`
+	cfg.Target.ResponsePath = "$.reply"
+	cfg.Target.TimeoutMs = 5000
+	cfg.Scan.AllowPrivate = true
+	cfg.Scan.Categories = []string{"role-play"}
+	cfg.Scan.Mutations = nil
+	cfg.Scan.MaxProbes = 1
+	cfg.Scan.Concurrency = 1
+	cfg.Scan.RatePerSec = 100
+
+	out := filepath.Join(t.TempDir(), "r.json")
+	o := scanOpts{output: out, format: "json", timeout: 50 * time.Millisecond}
+	if err := runScan(cfg, o); err != nil {
+		t.Fatalf("runScan: %v", err)
+	}
+	raw, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatalf("read report: %v", err)
+	}
+	var rep struct {
+		Interrupted bool `json:"interrupted"`
+	}
+	if err := json.Unmarshal(raw, &rep); err != nil {
+		t.Fatalf("parse report: %v", err)
+	}
+	if !rep.Interrupted {
+		t.Fatal("expected interrupted report after deadline")
 	}
 }
