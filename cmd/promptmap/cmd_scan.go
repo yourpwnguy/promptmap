@@ -50,9 +50,9 @@ func newScanCmd() *cobra.Command {
 				return fmt.Errorf("refusing without --i-have-permission (only scan apps you own or are allowed to test)")
 			}
 			switch format {
-			case "json", "html", "both":
+			case "json", "html", "both", "sarif":
 			default:
-				return fmt.Errorf("bad --format %q (want json, html or both)", format)
+				return fmt.Errorf("bad --format %q (want json, html, both or sarif)", format)
 			}
 			var cfg config.Config
 			if cfgFile == "" {
@@ -113,7 +113,7 @@ func newScanCmd() *cobra.Command {
 	cmd.Flags().StringArrayVar(&headers, "header", nil, `"Key: Value" header to send (repeatable)`)
 	cmd.Flags().StringSliceVar(&categories, "categories", nil, "only run these payload categories (comma separated or repeatable)")
 	cmd.Flags().BoolVar(&saveAll, "save-all", false, "save prompts and responses for blocked probes too (big files)")
-	cmd.Flags().StringVar(&format, "format", "json", "report format: json, html or both")
+	cmd.Flags().StringVar(&format, "format", "json", "report format: json, html, both or sarif")
 	cmd.Flags().DurationVar(&timeout, "timeout", 0, "overall scan deadline, e.g. 2m (0 means none)")
 	return cmd
 }
@@ -266,6 +266,11 @@ func runScan(cfg config.Config, o scanOpts) error {
 			return err
 		}
 		fmt.Println("wrote", o.output, "and", htmlPath)
+	case "sarif":
+		if err := report.WriteSARIF(o.output, rep); err != nil {
+			return err
+		}
+		fmt.Println("wrote", o.output)
 	default:
 		return fmt.Errorf("unreachable: bad format %q slipped past flag validation", o.format)
 	}
