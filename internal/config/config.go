@@ -42,6 +42,7 @@ type Scan struct {
 	Mutations    []string `mapstructure:"mutations"`
 	MaxProbes    int      `mapstructure:"max_probes"`
 	AllowPrivate bool     `mapstructure:"allow_private"`
+	HistoryDB    string   `mapstructure:"history_db"`
 }
 
 // Config is the full run configuration.
@@ -153,5 +154,7 @@ scan:
   mutations: [case-swap, pad-whitespace]
   max_probes: 200
   allow_private: true
+  # empty history_db saves to the default history file, --no-history disables it
+  history_db: ""
 `
 }

@@ -151,3 +151,19 @@ func TestRunScanDryRun(t *testing.T) {
 		t.Fatal("dry run must not write a report file")
 	}
 }
+
+func TestResolveHistoryDB(t *testing.T) {
+	if got, _ := resolveHistoryDB("cfg.db", "flag.db", false, true); got != "flag.db" {
+		t.Errorf("explicit flag should win, got %q", got)
+	}
+	if got, _ := resolveHistoryDB("cfg.db", "", false, false); got != "cfg.db" {
+		t.Errorf("config value should win over default, got %q", got)
+	}
+	if got, _ := resolveHistoryDB("", "", true, false); got != "" {
+		t.Errorf("--no-history should disable saving, got %q", got)
+	}
+	got, err := resolveHistoryDB("", "", false, false)
+	if err != nil || got == "" {
+		t.Errorf("expected default path, got %q err %v", got, err)
+	}
+}

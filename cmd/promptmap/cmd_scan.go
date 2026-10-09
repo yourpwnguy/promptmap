@@ -14,6 +14,7 @@ import (
 
 	"github.com/promptmap/promptmap/internal/config"
 	"github.com/promptmap/promptmap/internal/detect"
+	"github.com/promptmap/promptmap/internal/history"
 	"github.com/promptmap/promptmap/internal/mutate"
 	"github.com/promptmap/promptmap/internal/payloads"
 	"github.com/promptmap/promptmap/internal/report"
@@ -41,6 +42,8 @@ func newScanCmd() *cobra.Command {
 		format      string
 		timeout     time.Duration
 		dryRun      bool
+		historyDB   string
+		noHistory   bool
 	)
 	cmd := &cobra.Command{
 		Use:   "scan",
@@ -94,7 +97,11 @@ func newScanCmd() *cobra.Command {
 			if err := mergeHeaders(&cfg, headers); err != nil {
 				return err
 			}
-			return runScan(cfg, scanOpts{output: output, customDir: customDir, saveAll: saveAll, format: format, timeout: timeout, dryRun: dryRun})
+			historyDB, err := resolveHistoryDB(cfg.Scan.HistoryDB, historyDB, noHistory, cmd.Flags().Changed("history-db"))
+			if err != nil {
+				return err
+			}
+			return runScan(cfg, scanOpts{output: output, customDir: customDir, saveAll: saveAll, format: format, timeout: timeout, dryRun: dryRun, historyDB: historyDB})
 		},
 	}
 	cmd.Flags().StringVar(&mode, "mode", "direct", "direct or indirect")
@@ -115,6 +122,8 @@ func newScanCmd() *cobra.Command {
 	cmd.Flags().StringVar(&format, "format", "json", "report format: json, html, both or sarif")
 	cmd.Flags().DurationVar(&timeout, "timeout", 0, "overall scan deadline, e.g. 2m (0 means none)")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "print the probes that would run, then exit without sending anything")
+	cmd.Flags().StringVar(&historyDB, "history-db", "", "history file path (default: config value or per-user file)")
+	cmd.Flags().BoolVar(&noHistory, "no-history", false, "skip saving this scan to history")
 	return cmd
 }
 
@@ -127,6 +136,7 @@ type scanOpts struct {
 	format    string
 	timeout   time.Duration
 	dryRun    bool
+	historyDB string
 }
 
 // parseHeaders turns repeatable --header "Key: Value" flags into a map.
@@ -160,6 +170,22 @@ func mergeHeaders(cfg *config.Config, flags []string) error {
 		cfg.Target.Headers[k] = val
 	}
 	return nil
+}
+
+// resolveHistoryDB decides where this scan gets recorded. --no-history
+// wins over everything, then an explicit --history-db, then the config
+// file value, then the per-user default. Empty means do not save.
+func resolveHistoryDB(cfgVal, flagVal string, noHistory, flagChanged bool) (string, error) {
+	if noHistory {
+		return "", nil
+	}
+	if flagChanged {
+		return flagVal, nil
+	}
+	if cfgVal != "" {
+		return cfgVal, nil
+	}
+	return history.DefaultPath()
 }
 
 // quickConfig builds a Config from --url flags so trivial targets do
@@ -314,6 +340,22 @@ func runScan(cfg config.Config, o scanOpts) error {
 		return fmt.Errorf("unreachable: bad format %q slipped past flag validation", o.format)
 	}
 	report.PrintSummary(rep)
+	if o.historyDB != "" {
+		// History is auxiliary: if it fails we warn and keep the scan
+		// results, we never fail a good scan over a bookkeeping error.
+		st, err := history.Open(o.historyDB)
+		if err != nil {
+			slog.Warn("history unavailable, scan results above are still valid", "err", err)
+		} else {
+			id, err := st.Save(rep)
+			st.Close()
+			if err != nil {
+				slog.Warn("history save failed, scan results above are still valid", "err", err)
+			} else {
+				fmt.Println("saved as scan", id)
+			}
+		}
+	}
 
 	if rep.Summary.LikelyVuln > 0 || rep.Summary.Unclear > 0 {
 		code := 2
