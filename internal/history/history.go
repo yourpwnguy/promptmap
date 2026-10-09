@@ -215,6 +215,80 @@ func (s *Store) Get(id int64) (SavedScan, error) {
 	return out, rows.Err()
 }
 
+// VerdictChange is how one payload fared between two scans.
+type VerdictChange struct {
+	PayloadID string
+	Category  string
+	Before    string
+	After     string
+}
+
+// CompareResult summarizes a scan to scan comparison.
+type CompareResult struct {
+	FromID   int64
+	ToID     int64
+	New      []VerdictChange // newly vulnerable or unclear, the bad news
+	Fixed    []VerdictChange // got worse before, better now, the good news
+	Changed  []VerdictChange // anything else that moved
+	Warnings []string
+}
+
+// Compare diffs two scans by payload id.
+//
+// This is the whole reason history exists: "did last week's fix work?"
+// We bucket changes into new problems, fixed ones, and other moves, and
+// warn when the corpus versions or targets differ, because comparing
+// a direct scan to an indirect scan is apples to oranges and should
+// not read as a security win or loss.
+func (s *Store) Compare(fromID, toID int64) (CompareResult, error) {
+	from, err := s.Get(fromID)
+	if err != nil {
+		return CompareResult{}, err
+	}
+	to, err := s.Get(toID)
+	if err != nil {
+		return CompareResult{}, err
+	}
+	out := CompareResult{FromID: fromID, ToID: toID}
+
+	fromMap := map[string]SavedFinding{}
+	for _, f := range from.Findings {
+		fromMap[f.PayloadID] = f
+	}
+	toMap := map[string]SavedFinding{}
+	for _, f := range to.Findings {
+		toMap[f.PayloadID] = f
+	}
+	if from.TargetHash != to.TargetHash {
+		out.Warnings = append(out.Warnings, "different targets, these runs are not comparable")
+	}
+	if from.CorpusVersion != to.CorpusVersion {
+		out.Warnings = append(out.Warnings, "corpus changed "+from.CorpusVersion+" to "+to.CorpusVersion+", payload sets may differ")
+	}
+
+	worse := func(v string) bool { return v == "likely-vulnerable" || v == "unclear" }
+
+	for id, tf := range toMap {
+		bf, ok := fromMap[id]
+		if !ok {
+			continue // payload only exists in the newer scan, not a change
+		}
+		if bf.Verdict == tf.Verdict {
+			continue
+		}
+		ch := VerdictChange{PayloadID: id, Category: tf.Category, Before: bf.Verdict, After: tf.Verdict}
+		switch {
+		case worse(tf.Verdict):
+			out.New = append(out.New, ch)
+		case worse(bf.Verdict):
+			out.Fixed = append(out.Fixed, ch)
+		default:
+			out.Changed = append(out.Changed, ch)
+		}
+	}
+	return out, nil
+}
+
 func boolToInt(b bool) int {
 	if b {
 		return 1

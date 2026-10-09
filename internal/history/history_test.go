@@ -106,3 +106,79 @@ func TestGetUnknown(t *testing.T) {
 		t.Fatal("expected error for unknown scan id")
 	}
 }
+
+func TestCompareBuckets(t *testing.T) {
+	st, err := history.Open(filepath.Join(t.TempDir(), "h.db"))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer st.Close()
+
+	// older run: a is vulnerable, b is unclear, c is clean
+	older := report.Build([]runner.Result{
+		{Probe: payloads.Probe{PayloadID: "a"}, Verdict: detect.LikelyVuln, Reason: "canary_found"},
+		{Probe: payloads.Probe{PayloadID: "b"}, Verdict: detect.Unclear, Reason: "canary_echo"},
+		{Probe: payloads.Probe{PayloadID: "c"}, Verdict: detect.Blocked, Reason: "no_signal"},
+	}, "sha256:same", "v0.1.0", time.Now(), false, false)
+	fromID, err := st.Save(older)
+	if err != nil {
+		t.Fatalf("save older: %v", err)
+	}
+	// newer run: a got fixed, b still bad, c broke
+	newer := report.Build([]runner.Result{
+		{Probe: payloads.Probe{PayloadID: "a"}, Verdict: detect.Blocked, Reason: "refusal_phrase"},
+		{Probe: payloads.Probe{PayloadID: "b"}, Verdict: detect.LikelyVuln, Reason: "canary_found"},
+		{Probe: payloads.Probe{PayloadID: "c"}, Verdict: detect.Unclear, Reason: "suspicious_pattern"},
+	}, "sha256:same", "v0.1.0", time.Now().Add(time.Minute), false, false)
+	toID, err := st.Save(newer)
+	if err != nil {
+		t.Fatalf("save newer: %v", err)
+	}
+
+	got, err := st.Compare(fromID, toID)
+	if err != nil {
+		t.Fatalf("compare: %v", err)
+	}
+	if len(got.Fixed) != 1 || got.Fixed[0].PayloadID != "a" {
+		t.Errorf("a should be fixed: %+v", got.Fixed)
+	}
+	// c broke and b got worse, both count as new problems
+	if len(got.New) != 2 {
+		t.Errorf("b and c should both be new problems: %+v", got.New)
+	}
+	if len(got.Changed) != 0 {
+		t.Errorf("nothing should land in the plain change bucket: %+v", got.Changed)
+	}
+	if len(got.Warnings) != 0 {
+		t.Errorf("same target and corpus should warn about nothing: %+v", got.Warnings)
+	}
+}
+
+func TestCompareWarnsOnMismatch(t *testing.T) {
+	st, err := history.Open(filepath.Join(t.TempDir(), "h.db"))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer st.Close()
+	a, _ := st.Save(report.Build(nil, "sha256:aaa", "v0.1.0", time.Now(), false, false))
+	b, _ := st.Save(report.Build(nil, "sha256:bbb", "v0.2.0", time.Now(), false, false))
+	got, err := st.Compare(a, b)
+	if err != nil {
+		t.Fatalf("compare: %v", err)
+	}
+	if len(got.Warnings) != 2 {
+		t.Fatalf("expected target and corpus warnings, got %v", got.Warnings)
+	}
+}
+
+func TestCompareUnknownID(t *testing.T) {
+	st, err := history.Open(filepath.Join(t.TempDir(), "h.db"))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer st.Close()
+	id, _ := st.Save(report.Build(nil, "sha256:x", "v0.1.0", time.Now(), false, false))
+	if _, err := st.Compare(id, 999); err == nil {
+		t.Fatal("expected error when comparing against unknown id")
+	}
+}

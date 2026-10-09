@@ -45,7 +45,7 @@ func Execute() (int, error) {
 	root.PersistentFlags().BoolVar(&quiet, "quiet", false, "only warnings and errors")
 	_ = v.BindPFlag("verbose", root.PersistentFlags().Lookup("verbose"))
 
-	root.AddCommand(newInitCmd(), newScanCmd(), newListCmd(), newVerifyCmd(), newHistoryCmd())
+	root.AddCommand(newInitCmd(), newScanCmd(), newListCmd(), newVerifyCmd(), newHistoryCmd(), newDiffCmd())
 
 	if err := root.Execute(); err != nil {
 		return 1, err
