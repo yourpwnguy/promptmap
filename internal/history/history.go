@@ -139,6 +139,47 @@ func (s *Store) Save(r report.Report) (int64, error) {
 	return id, nil
 }
 
+// ScanRow is one line of scan history for listings. Deliberately
+// lighter than SavedScan since listing needs no per payload detail.
+type ScanRow struct {
+	ID          int64
+	StartedAt   time.Time
+	TargetHash  string
+	Total       int
+	LikelyVuln  int
+	Unclear     int
+	Interrupted bool
+}
+
+// List returns newest first so `promptmap history` shows the latest
+// run at the top, which is what people care about when eyeballing.
+func (s *Store) List(limit int) ([]ScanRow, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	rows, err := s.db.Query(
+		`SELECT id, started_at, target_hash, total, unclear, likely_vuln, interrupted
+		 FROM scans ORDER BY id DESC LIMIT ?`, limit,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list scans: %w", err)
+	}
+	defer rows.Close()
+	var out []ScanRow
+	for rows.Next() {
+		var r ScanRow
+		var started string
+		var interrupted int
+		if err := rows.Scan(&r.ID, &started, &r.TargetHash, &r.Total, &r.Unclear, &r.LikelyVuln, &interrupted); err != nil {
+			return nil, fmt.Errorf("scan row: %w", err)
+		}
+		r.StartedAt, _ = time.Parse(time.RFC3339, started)
+		r.Interrupted = interrupted == 1
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
 // Get loads one scan with its findings. Unknown ids error out so
 // callers (history, diff) fail loudly instead of showing empty tables.
 func (s *Store) Get(id int64) (SavedScan, error) {

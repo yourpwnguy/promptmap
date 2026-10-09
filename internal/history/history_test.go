@@ -48,6 +48,54 @@ func TestSaveGetRoundtrip(t *testing.T) {
 	}
 }
 
+func TestListNewestFirst(t *testing.T) {
+	st, err := history.Open(filepath.Join(t.TempDir(), "h.db"))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer st.Close()
+	for i := 0; i < 3; i++ {
+		rep := report.Build(nil, "sha256:x", "v0.1.0", time.Now().Add(time.Duration(i)*time.Minute), false, false)
+		if _, err := st.Save(rep); err != nil {
+			t.Fatalf("save %d: %v", i, err)
+		}
+	}
+	rows, err := st.List(10)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(rows) != 3 {
+		t.Fatalf("expected 3 rows, got %d", len(rows))
+	}
+	if rows[0].ID <= rows[1].ID || rows[1].ID <= rows[2].ID {
+		t.Fatalf("expected newest first, got ids %d %d %d", rows[0].ID, rows[1].ID, rows[2].ID)
+	}
+	if rows[0].Total != 0 {
+		t.Fatalf("empty scan should have total 0, got %d", rows[0].Total)
+	}
+}
+
+func TestListLimit(t *testing.T) {
+	st, err := history.Open(filepath.Join(t.TempDir(), "h.db"))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer st.Close()
+	for i := 0; i < 3; i++ {
+		rep := report.Build(nil, "sha256:x", "v0.1.0", time.Now(), false, false)
+		if _, err := st.Save(rep); err != nil {
+			t.Fatalf("save: %v", err)
+		}
+	}
+	rows, err := st.List(2)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("limit ignored, got %d", len(rows))
+	}
+}
+
 func TestGetUnknown(t *testing.T) {
 	st, err := history.Open(filepath.Join(t.TempDir(), "h.db"))
 	if err != nil {
