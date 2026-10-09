@@ -44,6 +44,10 @@ func newScanCmd() *cobra.Command {
 		dryRun      bool
 		historyDB   string
 		noHistory   bool
+		judgeKey    string
+		judgeModel  string
+		judgeURL    string
+		judgeAll    bool
 	)
 	cmd := &cobra.Command{
 		Use:   "scan",
@@ -101,7 +105,7 @@ func newScanCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return runScan(cfg, scanOpts{output: output, customDir: customDir, saveAll: saveAll, format: format, timeout: timeout, dryRun: dryRun, historyDB: historyDB})
+			return runScan(cfg, scanOpts{output: output, customDir: customDir, saveAll: saveAll, format: format, timeout: timeout, dryRun: dryRun, historyDB: historyDB, judge: buildJudge(judgeKey, judgeModel, judgeURL, judgeAll), judgeAll: judgeAll})
 		},
 	}
 	cmd.Flags().StringVar(&mode, "mode", "direct", "direct or indirect")
@@ -124,7 +128,32 @@ func newScanCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "print the probes that would run, then exit without sending anything")
 	cmd.Flags().StringVar(&historyDB, "history-db", "", "history file path (default: config value or per-user file)")
 	cmd.Flags().BoolVar(&noHistory, "no-history", false, "skip saving this scan to history")
+	cmd.Flags().StringVar(&judgeKey, "judge-key", "", "API key for the LLM judge (also reads OPENAI_API_KEY)")
+	cmd.Flags().StringVar(&judgeModel, "judge-model", "", "judge model name, default gpt-4o-mini")
+	cmd.Flags().StringVar(&judgeURL, "judge-url", "", "OpenAI compatible base URL for the judge")
+	cmd.Flags().BoolVar(&judgeAll, "judge-all", false, "judge every reply, not just unclear ones")
 	return cmd
+}
+
+// buildJudge assembles the optional second opinion detector.
+//
+// By default the judge only sees replies the heuristics could not
+// settle, which keeps the bill small. --judge-all sends everything,
+// which is more accurate and much slower and pricier. No key means no
+// judge at all, so the tool stays usable offline.
+func buildJudge(key, model, baseURL string, judgeAll bool) detect.Detector {
+	if key == "" {
+		key = os.Getenv("OPENAI_API_KEY")
+	}
+	if key == "" {
+		return nil
+	}
+	j := detect.NewJudge(detect.JudgeOptions{APIKey: key, Model: model, BaseURL: baseURL})
+	heuristic := detect.NewHeuristic()
+	if judgeAll {
+		return j
+	}
+	return detect.NewFallback(heuristic, j)
 }
 
 // scanOpts groups the run time knobs so runScan does not grow a new
@@ -137,6 +166,8 @@ type scanOpts struct {
 	timeout   time.Duration
 	dryRun    bool
 	historyDB string
+	judge     detect.Detector
+	judgeAll  bool
 }
 
 // parseHeaders turns repeatable --header "Key: Value" flags into a map.
@@ -295,7 +326,11 @@ func runScan(cfg config.Config, o scanOpts) error {
 		ResponsePath: cfg.Target.ResponsePath,
 		Timeout:      time.Duration(cfg.Target.TimeoutMs) * time.Millisecond,
 	})
-	det := detect.NewHeuristic()
+	var det detect.Detector = detect.NewHeuristic()
+	if o.judge != nil {
+		slog.Info("llm judge enabled", "every_reply", o.judgeAll)
+		det = o.judge
+	}
 
 	results := runner.Run(ctx, probes, sender, det, runner.Options{
 		Concurrency: cfg.Scan.Concurrency,

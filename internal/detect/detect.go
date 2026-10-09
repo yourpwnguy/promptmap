@@ -5,9 +5,10 @@
 // to users but says BANANA_123 anyway, it listened. That is bad.
 //
 // In v0.1 this is pure local string checks: deterministic, free,
-// offline, explainable. An LLM judge will implement the same Detector
-// interface later for trickier cases, but heuristics catch the obvious
-// wins without costing money or needing an API key.
+// offline, explainable. The judge in judge.go implements the same
+// Detector interface and takes over when the heuristic answer is
+// "unclear", but it costs money and needs an API key, so it stays off
+// by default.
 package detect
 
 import (
@@ -68,7 +69,7 @@ var suspiciousPatterns = []string{
 	"dan mode",
 }
 
-// Classify runs cheap rules in order: errors first, then canary,
+// Classify runs cheap rules in order: empty first, then canary,
 // then refusal, then fuzzy signals.
 //
 // Order matters. We check canary before refusal because a weird app

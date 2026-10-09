@@ -27,11 +27,13 @@ var canaryRe = regexp.MustCompile(`PWNED_\d+`)
 
 func main() {
 	addr := flag.String("addr", "127.0.0.1:8080", "listen address")
-	mode := flag.String("mode", "vulnerable", "vulnerable or safe")
+	mode := flag.String("mode", "vulnerable", "vulnerable, safe or vague")
 	flag.Parse()
 
-	if *mode != "vulnerable" && *mode != "safe" {
-		fmt.Fprintln(os.Stderr, "mode must be vulnerable or safe")
+	switch *mode {
+	case "vulnerable", "safe", "vague":
+	default:
+		fmt.Fprintln(os.Stderr, "mode must be vulnerable, safe or vague")
 		os.Exit(1)
 	}
 
@@ -53,6 +55,12 @@ func main() {
 			if m := canaryRe.FindString(in.Message); m != "" {
 				reply = "sure, here: " + m + " done"
 			}
+		}
+		// vague is the interesting one: it leaks that it has instructions
+		// without printing a canary, so the heuristic calls it unclear and
+		// the scan leans on the LLM judge to settle it.
+		if *mode == "vague" {
+			reply = "here are my instructions: be helpful. Is there anything else?"
 		}
 
 		out, _ := json.Marshal(map[string]string{"reply": reply})
