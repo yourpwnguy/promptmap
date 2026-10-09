@@ -40,6 +40,7 @@ func newScanCmd() *cobra.Command {
 		saveAll     bool
 		format      string
 		timeout     time.Duration
+		dryRun      bool
 	)
 	cmd := &cobra.Command{
 		Use:   "scan",
@@ -93,7 +94,7 @@ func newScanCmd() *cobra.Command {
 			if err := mergeHeaders(&cfg, headers); err != nil {
 				return err
 			}
-			return runScan(cfg, scanOpts{output: output, customDir: customDir, saveAll: saveAll, format: format, timeout: timeout})
+			return runScan(cfg, scanOpts{output: output, customDir: customDir, saveAll: saveAll, format: format, timeout: timeout, dryRun: dryRun})
 		},
 	}
 	cmd.Flags().StringVar(&mode, "mode", "direct", "direct or indirect")
@@ -113,6 +114,7 @@ func newScanCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&saveAll, "save-all", false, "save prompts and responses for blocked probes too (big files)")
 	cmd.Flags().StringVar(&format, "format", "json", "report format: json, html, both or sarif")
 	cmd.Flags().DurationVar(&timeout, "timeout", 0, "overall scan deadline, e.g. 2m (0 means none)")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "print the probes that would run, then exit without sending anything")
 	return cmd
 }
 
@@ -124,6 +126,7 @@ type scanOpts struct {
 	saveAll   bool
 	format    string
 	timeout   time.Duration
+	dryRun    bool
 }
 
 // parseHeaders turns repeatable --header "Key: Value" flags into a map.
@@ -176,6 +179,16 @@ func quickConfig(rawURL, method, body, respPath string) (config.Config, error) {
 		return config.Config{}, err
 	}
 	return cfg, nil
+}
+
+// truncatePrompt keeps dry run output readable. Full prompts live in
+// the corpus files, no need to flood the terminal with them.
+func truncatePrompt(s string) string {
+	s = strings.ReplaceAll(s, "\n", " ")
+	if len(s) > 120 {
+		return s[:120] + "..."
+	}
+	return s
 }
 
 // selectPayloads picks which corpus entries run for this scan.
@@ -236,6 +249,17 @@ func runScan(cfg config.Config, o scanOpts) error {
 	}
 	probes := mutate.Expand(base, muts, cfg.Scan.MaxProbes)
 	slog.Info("scan starting", "mode", cfg.Scan.Mode, "probes", len(probes), "target", cfg.Target.URL)
+
+	// Dry run ends here: show what would fire, touch nothing.
+	// This sits after selection and expansion on purpose, so the
+	// preview reflects --categories, --mutations and --max-probes.
+	if o.dryRun {
+		for i, pr := range probes {
+			fmt.Printf("%d. %s [%s] mut=%v\n   %s\n", i+1, pr.PayloadID, pr.Category, pr.Mutations, truncatePrompt(pr.Prompt))
+		}
+		fmt.Printf("%d probes, 0 sent (dry run)\n", len(probes))
+		return nil
+	}
 
 	sender := target.NewHTTPSender(target.Options{
 		URL:          cfg.Target.URL,

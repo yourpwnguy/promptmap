@@ -130,3 +130,24 @@ func TestRunScanTimeout(t *testing.T) {
 		t.Fatal("expected interrupted report after deadline")
 	}
 }
+
+// TestRunScanDryRun proves dry run never touches the network: the URL
+// points at a closed port, so any real send would fail loudly. Success
+// plus no report file means nothing was sent and nothing was written.
+func TestRunScanDryRun(t *testing.T) {
+	cfg := config.Defaults()
+	cfg.Target.URL = "http://127.0.0.1:9/api/chat"
+	cfg.Target.BodyTemplate = `{"message": "{{PROMPT}}"}`
+	cfg.Scan.AllowPrivate = true
+	cfg.Scan.Categories = []string{"jailbreak"}
+	cfg.Scan.Mutations = nil
+	cfg.Scan.MaxProbes = 5
+
+	out := filepath.Join(t.TempDir(), "r.json")
+	if err := runScan(cfg, scanOpts{output: out, format: "json", dryRun: true}); err != nil {
+		t.Fatalf("runScan dry run: %v", err)
+	}
+	if _, err := os.Stat(out); !os.IsNotExist(err) {
+		t.Fatal("dry run must not write a report file")
+	}
+}
