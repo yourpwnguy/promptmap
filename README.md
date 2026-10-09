@@ -46,6 +46,15 @@ promptmap list-payloads
 `--repeat` resends N times because one LLM answer can be luck. If
 verdicts differ across runs, the result is flaky, treat it as unclear.
 
+Want to see the judge work? Run the demo in `vague` mode, which leaks
+that it has instructions without printing a canary, so heuristics call
+it unclear and the judge has to settle it.
+
+```bash
+go run ./tools/demoserver --mode vague
+promptmap scan --url http://localhost:8080/api/chat --judge-key $OPENAI_API_KEY --i-have-permission
+```
+
 ## Useful flags
 
 ```bash
@@ -61,7 +70,38 @@ promptmap scan --config p.yaml --format sarif -o results.sarif --i-have-permissi
 
 # keep evidence for blocked probes too (big files), or cap a slow target
 promptmap scan --config p.yaml --save-all --timeout 2m --i-have-permission
+
+# see what would fire without sending anything
+promptmap scan --config p.yaml --dry-run --categories jailbreak
+
+# llm judge as second opinion, key from env or --judge-key
+promptmap scan --config p.yaml --judge-url https://api.openai.com/v1 --judge-model gpt-4o-mini --i-have-permission
+promptmap scan --config p.yaml --judge-all --i-have-permission   # judge every reply, pricier
+
+# skip history for one off scans, or point the file elsewhere
+promptmap scan --config p.yaml --no-history --i-have-permission
+promptmap scan --config p.yaml --history-db /tmp/h.db --i-have-permission
 ```
+
+## Remembering past scans
+
+Every scan lands in a local SQLite history file, so you can answer
+"did last week's fix work?".
+
+```bash
+promptmap history                      # list saved scans with ids
+promptmap diff 1 2                     # compare scan 1 (older) against 2 (newer)
+```
+
+`diff` prints three buckets: new problems (bad news), fixed (good
+news), and other moves. It warns when the targets or corpus versions
+differ, because comparing a direct run to an indirect run is apples to
+oranges and should not read as a security win. It exits `2` when
+nothing got fixed and something new broke, so CI can gate a regression.
+
+History stores summaries and verdicts only, never prompts or
+responses. Full evidence stays in the report files, which keeps the
+database small and boring to reason about.
 
 ## Scanning a real target
 
@@ -94,11 +134,13 @@ make fmt     # format
 
 Layout: `cmd/promptmap` is thin cobra wiring, real logic lives in
 `internal/` (`config`, `payloads`, `mutate`, `detect`, `target`,
-`runner`, `report`). The shipped corpus is 20 embedded payloads under
-`internal/payloads/corpus`. Add your own payloads with `--payload-dir`.
+`runner`, `report`, `history`). The shipped corpus is 20 embedded
+payloads under `internal/payloads/corpus`. Add your own payloads with
+`--payload-dir`.
 
 ## Roadmap
 
-Heuristic detector now, opt in LLM judge later. SQLite history and
-real callback based indirect tests come after the core loop is solid.
-No server, no queue, no dashboard until someone actually needs them.
+The heuristic detector is the default and the LLM judge is the opt in
+second opinion. Real callback based indirect tests are next on the
+list. No server, no queue, no dashboard until someone actually needs
+them.
