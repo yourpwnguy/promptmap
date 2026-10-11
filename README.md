@@ -126,10 +126,9 @@ Exit codes are CI friendly: `0` clean, `2` hits found, `1` error.
 ## Development
 
 ```bash
-make build   # compile everything
-make test    # full suite with race detector
-make vet     # static checks
-make fmt     # format
+make build   # compile the binary, version stamped from git
+make check   # the full gate CI enforces (fmt + vet + lint + test + build)
+make test    # unit tests, make test-race adds the race detector
 ```
 
 Layout: `cmd/promptmap` is thin cobra wiring, real logic lives in
