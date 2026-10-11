@@ -2,5 +2,8 @@
 promptmap-report*.json
 promptmap.yaml
 /bin/
+dist/
+coverage.out
+*.test
 idea.md
 .opencode/

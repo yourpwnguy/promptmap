@@ -1,0 +1,83 @@
+# goreleaser builds release binaries for promptmap.
+# Cutting a release is just: git tag vX.Y.Z && git push origin vX.Y.Z
+# Version lands in the binary via ldflags (see builds below),
+# so `promptmap --version` reports the release tag.
+version: 2
+
+project_name: promptmap
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: promptmap
+    main: ./cmd/promptmap
+    binary: promptmap
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      # -s -w strip debug info; main.Version is the single version source of truth.
+      - -s -w -X main.Version={{.Version}}
+
+archives:
+  - formats: [tar.gz]
+    # Windows users get zip; everyone else gets tar.gz.
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    files:
+      - README.md*
+      - LICENSE*
+      - CHANGELOG.md*
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  use: git
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - Merge pull request
+      - Merge branch
+
+# Native packages — Kali/Ubuntu (deb), RHEL (rpm), Arch (pacman) users install
+# without touching archives. Binaries land in /usr/bin automatically.
+nfpms:
+  - file_name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    vendor: promptmap
+    homepage: https://github.com/yourpwnguy/promptmap
+    maintainer: yourpwnguy
+    description: Prompt injection scanner for LLM applications
+    license: MIT
+    formats:
+      - deb
+      - rpm
+      - archlinux
+
+release:
+  draft: false
+  mode: replace
+
+# Homebrew tap — uncomment once a homebrew-tap repo exists:
+# brews:
+#   - repository:
+#       owner: yourpwnguy
+#       name: homebrew-tap
+#     directory: Formula
+#     homepage: https://github.com/yourpwnguy/promptmap
+#     description: Prompt injection scanner for LLM applications
+#     license: MIT
