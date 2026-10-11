@@ -63,9 +63,15 @@ func WriteHTML(path string, r Report) error {
 	if err != nil {
 		return fmt.Errorf("create %s: %w", path, err)
 	}
-	defer f.Close()
+	// Close is checked explicitly because buffered template output can
+	// still fail on flush. An execute error still closes the file first
+	// so we never leak the handle on the error path.
 	if err := t.Execute(f, r); err != nil {
+		_ = f.Close()
 		return fmt.Errorf("render html: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("write %s: %w", path, err)
 	}
 	return nil
 }

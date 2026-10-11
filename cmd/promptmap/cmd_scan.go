@@ -382,10 +382,12 @@ func runScan(cfg config.Config, o scanOpts) error {
 		if err != nil {
 			slog.Warn("history unavailable, scan results above are still valid", "err", err)
 		} else {
-			id, err := st.Save(rep)
-			st.Close()
-			if err != nil {
-				slog.Warn("history save failed, scan results above are still valid", "err", err)
+			id, serr := st.Save(rep)
+			cerr := st.Close()
+			if serr != nil {
+				slog.Warn("history save failed, scan results above are still valid", "err", serr)
+			} else if cerr != nil {
+				slog.Warn("history close failed, scan results above are still valid", "err", cerr)
 			} else {
 				fmt.Println("saved as scan", id)
 			}

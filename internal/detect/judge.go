@@ -136,7 +136,9 @@ func (j *Judge) complete(ctx context.Context, userPayload string) (string, error
 	if err != nil {
 		return "", fmt.Errorf("judge unavailable: %w", err)
 	}
-	defer resp.Body.Close()
+	// Same story as the target sender: decode errors are checked below,
+	// the close itself reports nothing we could act on.
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return "", fmt.Errorf("judge api status %d", resp.StatusCode)
 	}

@@ -105,7 +105,9 @@ func (s *HTTPSender) Send(ctx context.Context, prompt string) (string, int, erro
 	if err != nil {
 		return "", 0, fmt.Errorf("post %s: %w", s.url, err)
 	}
-	defer resp.Body.Close()
+	// The body is fully consumed below and read errors are checked, so
+	// by close time there is nothing actionable left to report.
+	defer func() { _ = resp.Body.Close() }()
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
 		return "", resp.StatusCode, fmt.Errorf("read response: %w", err)

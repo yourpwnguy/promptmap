@@ -67,11 +67,13 @@ func newDiffCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			defer st.Close()
-
 			res, err := st.Compare(fromID, toID)
+			cerr := st.Close()
 			if err != nil {
 				return err
+			}
+			if cerr != nil {
+				return fmt.Errorf("close history: %w", cerr)
 			}
 			for _, w := range res.Warnings {
 				fmt.Println("warning:", w)

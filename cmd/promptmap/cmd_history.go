@@ -55,11 +55,13 @@ func newHistoryCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			defer st.Close()
-
 			rows, err := st.List(limit)
+			cerr := st.Close()
 			if err != nil {
 				return err
+			}
+			if cerr != nil {
+				return fmt.Errorf("close history: %w", cerr)
 			}
 			if len(rows) == 0 {
 				// Fresh installs and "--no-history" users both land here,

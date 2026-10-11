@@ -72,7 +72,8 @@ func Open(path string) (*Store, error) {
 		return nil, fmt.Errorf("open history db: %w", err)
 	}
 	if _, err := db.Exec(schema); err != nil {
-		db.Close()
+		// The migrate error dominates here, so the close is best effort.
+		_ = db.Close()
 		return nil, fmt.Errorf("migrate history db: %w", err)
 	}
 	return &Store{db: db}, nil
@@ -110,7 +111,9 @@ func (s *Store) Save(r report.Report) (int64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("begin history tx: %w", err)
 	}
-	defer tx.Rollback()
+	// Rollback on a committed tx returns sql.ErrTxDone, which is harmless.
+	// The defer exists so early error returns never leak the transaction.
+	defer func() { _ = tx.Rollback() }()
 	res, err := tx.Exec(
 		`INSERT INTO scans(started_at, target_hash, corpus_version, total, blocked, unclear, likely_vuln, errors, interrupted)
 		 VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -164,7 +167,10 @@ func (s *Store) List(limit int) ([]ScanRow, error) {
 	if err != nil {
 		return nil, fmt.Errorf("list scans: %w", err)
 	}
-	defer rows.Close()
+	// Iteration errors surface through rows.Err below. A close after a
+	// fully read result set has nothing actionable to report, so it is
+	// acknowledged rather than checked.
+	defer func() { _ = rows.Close() }()
 	var out []ScanRow
 	for rows.Next() {
 		var r ScanRow
@@ -204,7 +210,9 @@ func (s *Store) Get(id int64) (SavedScan, error) {
 	if err != nil {
 		return SavedScan{}, fmt.Errorf("load findings: %w", err)
 	}
-	defer rows.Close()
+	// Same deal as List: iteration errors come through rows.Err, the
+	// close itself reports nothing we could act on.
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var f SavedFinding
 		if err := rows.Scan(&f.PayloadID, &f.Category, &f.Verdict, &f.Reason); err != nil {
