@@ -24,7 +24,7 @@ jobs:
         run: test -z "$(gofmt -l .)"
       - uses: golangci/golangci-lint-action@v8
         with:
-          version: v2.6
+          version: v2.14.0
 
   test:
     name: test (${{ matrix.os }})
@@ -81,15 +81,25 @@ jobs:
       - run: ./promptmap init --output smoke.yaml
       - name: scan vulnerable demo (expect hits)
         run: |
+          # Actions runs steps with errexit, and the scan exits 2 on hits
+          # by design, so without set +e the shell would die before the
+          # assertion runs. Capture the code, always stop the server,
+          # and let the final test decide the step.
+          set +e
           ./demoserver --mode vulnerable &
           echo $! > demo.pid
           sleep 2
-          ./promptmap scan --config smoke.yaml --i-have-permission --max-probes 12 -o smoke-vuln.json; test $? -eq 2
+          ./promptmap scan --config smoke.yaml --i-have-permission --max-probes 12 -o smoke-vuln.json
+          scan_code=$?
           kill $(cat demo.pid)
+          test $scan_code -eq 2
       - name: scan safe demo (expect clean)
         run: |
+          set +e
           ./demoserver --mode safe &
           echo $! > demo.pid
           sleep 2
-          ./promptmap scan --config smoke.yaml --i-have-permission --max-probes 12 -o smoke-safe.json; test $? -eq 0
+          ./promptmap scan --config smoke.yaml --i-have-permission --max-probes 12 -o smoke-safe.json
+          scan_code=$?
           kill $(cat demo.pid)
+          test $scan_code -eq 0
