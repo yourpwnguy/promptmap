@@ -7,7 +7,7 @@
 #
 # Overrideables:
 #   make build VERSION=9.9.9-custom
-#   make lint GOLANGCI_LINT_VERSION=v2.6.2
+#   make lint GOLANGCI_LINT_VERSION=v2.14.0
 # =============================================================================
 
 BINARY      := promptmap
@@ -22,7 +22,7 @@ VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 
 LDFLAGS     := -s -w -X main.Version=$(VERSION)
 
-GOLANGCI_LINT_VERSION ?= v2.6.2
+GOLANGCI_LINT_VERSION ?= v2.14.0
 
 .DEFAULT_GOAL := help
 .PHONY: help all build test test-race cover fmt vet lint check tidy clean install uninstall release-snapshot run-demo
