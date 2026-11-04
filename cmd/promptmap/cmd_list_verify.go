@@ -13,8 +13,16 @@ import (
 	"github.com/promptmap/promptmap/internal/target"
 )
 
+// newListCmd lists the embedded corpus.
+//
+// Basically the discovery command: what payloads exist, grouped by
+// category, so you can pick a --categories filter for a real scan.
+// We write through cmd.OutOrStdout instead of stdout so the output is
+// redirectable and testable, which matters more here than anywhere
+// else since this command exists to be piped into grep.
 func newListCmd() *cobra.Command {
-	return &cobra.Command{
+	var categories []string
+	cmd := &cobra.Command{
 		Use:   "list-payloads",
 		Short: "List embedded payloads",
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -22,12 +30,21 @@ func newListCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			for _, p := range all {
-				fmt.Printf("%s [%s] %s\n", p.ID, p.Category, p.Severity)
+			selected := payloads.Filter(all, categories)
+			if len(selected) == 0 {
+				// An empty list is almost always a typo in --categories,
+				// so say so instead of printing nothing.
+				return fmt.Errorf("no payloads match categories %v (see list-payloads with no filter)", categories)
+			}
+			out := cmd.OutOrStdout()
+			for _, p := range selected {
+				fmt.Fprintf(out, "%s [%s] %s\n", p.ID, p.Category, p.Severity)
 			}
 			return nil
 		},
 	}
+	cmd.Flags().StringSliceVar(&categories, "categories", nil, "only list these categories (comma separated or repeatable)")
+	return cmd
 }
 
 func newVerifyCmd() *cobra.Command {
